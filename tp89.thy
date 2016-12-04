@@ -1,13 +1,10 @@
 theory tp89
-imports Main (* "~~/src/HOL/Library/Code_Target_Nat" *)
+imports Main "~~/src/HOL/Library/Code_Target_Nat" 
 begin
 
 
 
-(* 
-quickcheck_params [size=6,tester=narrowing,timeout=120]
-nitpick_params [timeout=120]
-*)
+
 
 (*
 transid
@@ -42,18 +39,49 @@ datatype etatTrans=
 datatype SomeTrans =
   None
 | Integer nat
+
+datatype SomeEtat =
+  Nothing
+| Etat  etatTrans
 type_synonym transaction= "transid * nat"
-(* transid * am m * am c * etat  *)
+
+
+(* transid * am marchand * am client * etat  *)
 
 type_synonym ligneBdd = "(transid * SomeTrans *SomeTrans * etatTrans )"
+
 type_synonym transBdd ="ligneBdd list"
+
+(* select dans la bdd, l'etat de la transi*)
+fun selectEtat ::"transid \<Rightarrow> transBdd \<Rightarrow> SomeEtat "
+where
+ "selectEtat _ [] = Nothing"
+|"selectEtat id1 ((id2::transid,sm2,sc2,etat2)#xs) =( if(id1=id2) then (Etat etat2)  else selectEtat id1 xs )"
+
+(* select dans la bdd de la proposition du marchand*)
+fun selectMarch ::"transid \<Rightarrow> transBdd \<Rightarrow> SomeTrans "
+where
+ "selectMarch _ [] = None"
+|"selectMarch id1 ((id2::transid,sm2,sc2,etat2)#xs) =( if(id1=id2) then sm2  else selectMarch id1 xs )"
+
+(* select dans la bdd de la proposition du client*)
+fun selectClient ::"transid \<Rightarrow> transBdd \<Rightarrow> SomeTrans"
+where
+ "selectClient _ [] = None"
+|"selectClient id1 ((id2::transid,sm2,sc2,etat2)#xs) =( if(id1=id2) then sc2  else selectClient id1 xs )"
+
+
+
+
+
+
 
 fun updateLignePay :: "  nat \<Rightarrow> ligneBdd \<Rightarrow>  ligneBdd"
 where
- "updateLignePay v1 ((x2::transid),m2,c2,Abort) =  ((x2::transid),m2,c2,Abort)"
+ "updateLignePay _ ((x2::transid),m2,c2,Abort) =  ((x2::transid),m2,c2,Abort)"
 |"updateLignePay v1 ((x2::transid),Integer m2,None,Encours) = (if (v1\<ge>m2) then  ((x2::transid),Integer m2, Integer v1,Ok) else  ((x2::transid),Integer m2,Integer v1,Encours) )"
 |"updateLignePay v1 ((x2::transid),Integer m2,Integer v2,Encours) = (if (v1>v2) then  (if(v1\<ge>m2) then  ((x2::transid),Integer m2,Integer v1,Ok)  else  ((x2::transid),Integer m2,Integer v1,Encours)) else ( ((x2::transid),Integer m2,Integer v2,Encours)))"
-|"updateLignePay v1 ((x2::transid),m2,c2,Ok) = ((x2::transid),m2,c2,Ok)"
+|"updateLignePay _ ((x2::transid),m2,c2,Ok) = ((x2::transid),m2,c2,Ok)"
 |"updateLignePay v1 (v,None, None, Encours) =  (v,None, Integer v1, Encours)"
 |"updateLignePay v1 (v,None, Integer v2, Encours) = (if (v1>v2) then (v,None, Integer v1, Encours)  else (v,None, Integer v2, Encours)) "
 
@@ -65,10 +93,10 @@ where
 
 fun updateLigneAck :: "nat \<Rightarrow> ligneBdd \<Rightarrow>  ligneBdd"
 where
- "updateLigneAck m1 ((x2::transid),m2,c2,Abort) =  ((x2::transid),m2,c2,Abort)"
+ "updateLigneAck _ ((x2::transid),m2,c2,Abort) =  ((x2::transid),m2,c2,Abort)"
 |"updateLigneAck m1 ((x2::transid),Integer m2,None,Encours) = (if (m1\<le>m2) then  ((x2::transid),Integer m1, None,Encours) else  ((x2::transid),Integer m2,None,Encours) )"
 |"updateLigneAck m1 ((x2::transid),Integer m2,Integer v2,Encours) = (if (m1\<le>m2) then  (if(m1\<le>v2) then  ((x2::transid),Integer m1,Integer v2,Ok)  else  ((x2::transid),Integer m1,Integer v2,Encours)) else ( ((x2::transid),Integer m2,Integer v2,Encours)))"
-|"updateLigneAck m1 ((x2::transid),m2,c2,Ok) = ((x2::transid),m2,c2,Ok)"
+|"updateLigneAck _ ((x2::transid),m2,c2,Ok) = ((x2::transid),m2,c2,Ok)"
 |"updateLigneAck m1 (v,None, None, Encours) =  (v,Integer m1,None, Encours)"
 |"updateLigneAck m1 (v,None, Integer v2, Encours) = (if (m1\<le>v2) then (v,Integer m1, Integer v2, Ok)  else (v, Integer m1,Integer v2, Encours)) "
 
@@ -90,7 +118,7 @@ where
 fun traiterMessage ::"message \<Rightarrow> transBdd \<Rightarrow> transBdd "
 where
  "traiterMessage ( Pay transid am) tb = (if(am>0) then updatePay (transid, am) tb else tb)" 
-|"traiterMessage ( Ack transid am) tb = (if(am>0) then  updateAck (transid, am) tb else tb)"
+|"traiterMessage ( Ack transid am) tb = (if(am\<ge>0) then  updateAck (transid, am) tb else tb)"
 |"traiterMessage ( Cancel transid) tb = updateCancel transid tb "
 
 fun export:: "transBdd \<Rightarrow> transaction list"
@@ -109,64 +137,76 @@ where
  "traiterMessageList ml = traiMessList ml []"
 
 
-(*
-transid
-c identifie un client
-m identifie un marchand
-i numéro de transaction entre c et m
-
-am transaction montant retenu pour la transaction
-
-Client \<longrightarrow> Marchand
-Pay (c,m,i) am \<longrightarrow> c accepte de payer le montant am à m pour la transaction id
-
-Marchand \<longrightarrow> Client
-Ack (c,m,i) am \<longrightarrow> m demande un montant am au client c pour la transaction id
-Cancel (c,m,i) \<longrightarrow> m annule toutes les transactions pour transaction id 
-
-le marchand doit diminuer am
-le client doit augmenter am
-*)
-
 
 lemma lem1:"( (List.member  (export  (traiterMessageList lm)) (a,b)) \<longrightarrow> (b>0))"
 apply (induct lm)
 apply auto
 apply (simp add: member_rec(2))
-nitpick[timeout=140]
+oops
 
 
-definition "messagelist =[(Cancel ((0) ,0 ,0) ),(Cancel ((1) ,0 ,0) )]"
 
-definition "message =(Cancel (0 ,0 ,0) )"
 
-definition "bdd1=[((0, 0, 0), SomeTrans.None, SomeTrans.None, Encours), ((0, 0, 0), SomeTrans.None, Integer 0, Ok)]"
+lemma lem2:"List.distinct (exportid (export  (traiterMessageList lm))) " 
+apply (induct lm)
+apply auto
 
-value "traiterMessageList messagelist"
+oops
 
-lemma lem3:"(List.member (export (traiterMessage (Cancel  a) (traiterMessageList lm))) (a,b)) = False"
+lemma lem3:"(selectEtat a  (traiterMessage (Cancel  a) (traiterMessageList lm))) = Etat Abort"
+
+apply (induct lm)
+apply auto
+
+oops
+
+lemma lem4:"(List.member (export (traiterMessage (Cancel  a) (traiterMessageList lm))) (a,b)) = False"
 apply (induct lm)
 apply auto
 apply (simp add: member_rec(2))
 
+oops
 
 
+lemma lem5:"pc\<ge>pm \<and> pc>0 \<and>  \<not>(List.member  lm (Cancel a )) \<longrightarrow> (\<exists> pc. List.member (export (traiterMessage (Pay a pc)  (traiterMessage (Ack  a pm) (traiterMessageList lm)))) (a,pc))"
+apply (induct lm)
+apply auto
+apply (metis gr_implies_not0 member_rec(1))
+apply (simp add: member_rec(1))
+
+oops
+
+lemma lem6:"(selectEtat a (traiterMessageList lm) = Etat Ok) \<longrightarrow>(\<exists> pc pm.(List.member lm (Ack a pm)) \<and> (List.member lm (Pay a pc)) \<and> pc \<ge> pm) "
+apply (induct lm)
+apply auto
 
 
+oops
 
-lemma lem4:" (List.member (traiterMessage (message) bdd) ((a::transid),b,c,d) \<longrightarrow> (List.member bdd ((a::transid),b,c,Abort)  ))"
-sorry
+lemma lem71:"( selectClient a  (traiterMessageList lm)) = Integer pm \<and> pm> mo \<longrightarrow> ( selectClient a (traiterMessage (Pay  a mo)  (traiterMessageList lm))) = Integer pm "
 
-lemma lem81:" (List.member (traiterMessage (Ack a em ) bdd) ((a::transid),b,c,Ok) \<longrightarrow> (List.member bdd ((a::transid),b,c,Ok)  ))"
-sorry
+oops
 
-lemma lem82:" (List.member (traiterMessage (Pay a em) bdd) ((a::transid),b,c,Ok) \<longrightarrow> (List.member bdd ((a::transid),b,c,Ok)  ))"
-sorry
+
+lemma lem72:"( selectMarch a  (traiterMessageList lm)) = Integer pm \<and> pm < mo \<longrightarrow> ( selectMarch a (traiterMessage (Ack  a mo) (traiterMessageList lm))) = Integer pm "
+
+oops
+
+lemma lem81:"(selectEtat a (traiterMessageList lm) = Etat Ok) \<and> (selectClient a (traiterMessage (Pay  a pm) (traiterMessageList lm)) = Integer pm) \<longrightarrow> (selectClient a (traiterMessage (Pay  a autre) (traiterMessageList lm)) = Integer pm)"
+
+oops
+
+lemma lem82:"(selectEtat a (traiterMessageList lm) = Etat Ok) \<and> (selectMarch a (traiterMessageList lm) = Integer pm) \<longrightarrow> (selectMarch a  (traiterMessage (Ack  a autre) (traiterMessageList lm)) = Integer pm)"
+
+oops
+
+lemma lem9:"(selectEtat a (traiterMessageList lm) = Etat Ok) \<and> (selectMarch a (traiterMessageList lm) = Integer pm) \<and>  (selectClient a  (traiterMessageList lm) = Integer pc) \<longrightarrow> (List.member (export (traiterMessageList lm)) (a,pc)) "
+oops
+
 (* ----- Exportation en Scala (Isabelle 2014) -------*)
 
 (* Directive d'exportation *)
 export_code export traiterMessage in Scala
-
 
 
 end
